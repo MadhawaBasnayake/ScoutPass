@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scout Pass Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    
+    <style>
+        body { background: #f0f2f5; height: 100vh; display: flex; align-items: center; justify-content: center; font-family: 'Poppins', sans-serif; }
+        .login-card { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); width: 100%; max-width: 420px; text-align: center; }
+        .logo-area { width: 80px; height: 80px; background: #6c5ce7; color: white; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 40px; margin: 0 auto 20px; box-shadow: 0 5px 15px rgba(108, 92, 231, 0.3); }
+        .form-control { background: #f8f9fa; border: 2px solid #eee; padding: 12px; border-radius: 10px; margin-bottom: 15px; }
+        .form-control:focus { border-color: #6c5ce7; box-shadow: none; background: white; }
+        .btn-login { background: #6c5ce7; color: white; width: 100%; padding: 12px; border-radius: 10px; font-weight: 600; border: none; transition: 0.3s; }
+        .btn-login:hover { background: #5649c0; transform: translateY(-2px); }
+    </style>
+</head>
+<body>
+
+<div class="login-card animate__animated animate__fadeInUp">
+    <div class="logo-area">⚜️</div>
+    <h3 class="fw-bold text-dark">Scout Pass</h3>
+    <p class="text-muted small mb-4">Command Center Access</p>
+
+    <form id="loginForm" onsubmit="handleLogin(event)">
+        <input type="email" id="email" class="form-control" placeholder="Email Address" required>
+        <input type="password" id="password" class="form-control" placeholder="Password" required>
+        <button type="submit" id="loginBtn" class="btn btn-login">Login System</button>
+    </form>
+    
+    <div class="mt-4 text-muted small">System v4.0 • Realtime DB</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, get, child } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    // 🔴 TODO: PASTE YOUR FIREBASE CONFIG HERE
+    const firebaseConfig = {
+        apiKey: "PASTE_YOUR_API_KEY_HERE",
+        authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
+        projectId: "PASTE_YOUR_PROJECT_ID",
+        storageBucket: "PASTE_YOUR_PROJECT_ID.firebasestorage.app",
+        messagingSenderId: "PASTE_YOUR_SENDER_ID",
+        appId: "PASTE_YOUR_APP_ID",
+        databaseURL: "PASTE_YOUR_DATABASE_URL_HERE"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+
+    window.handleLogin = async function(e) {
+        e.preventDefault();
+        const email = document.getElementById('email').value;
+        const pass = document.getElementById('password').value;
+        const btn = document.getElementById('loginBtn');
+        btn.innerHTML = 'Authenticating...'; btn.disabled = true;
+
+        try {
+            const userCredential = await signInWithEmailAndPassword(auth, email, pass);
+            const user = userCredential.user;
+            const snapshot = await get(child(ref(db), `users/${user.uid}`));
+
+            if (snapshot.exists()) {
+                const role = snapshot.val().role;
+                Swal.fire({icon: 'success', title: `Welcome, ${role.toUpperCase()}`, timer: 1500, showConfirmButton: false})
+                .then(() => {
+                    if(role === 'scanner') window.location.href = "scanner.html";
+                    else window.location.href = "dashboard.html";
+                });
+            } else { throw new Error("User data not found!"); }
+        } catch (error) {
+            Swal.fire({icon: 'error', title: 'Login Failed', text: error.message});
+            btn.innerHTML = 'Login System'; btn.disabled = false;
+        }
+    }
+</script>
+</body>
+</html>
