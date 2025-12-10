@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scout Pass | Command Center</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/animate.css/4.1.1/animate.min.css"/>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.28/jspdf.plugin.autotable.min.js"></script>
+
+    <style>
+        :root { --primary: #3B82F6; --bg: #f5f6fa; --card: #ffffff; --text: #2d3436; --border: #dfe6e9; --input-bg: #f8f9fa; }
+        [data-theme="dark"] { --bg: #000000; --card: #0F0F0F; --text: #ffffff; --border: #333333; --input-bg: #1a1a1a; }
+        body { background-color: var(--bg); color: var(--text); font-family: 'Outfit', sans-serif; transition: 0.3s; }
+        [data-theme="dark"] .text-muted { color: #d1d5db !important; }
+        .sidebar { position: fixed; height: 100vh; width: 260px; background: var(--card); padding: 20px; border-right: 1px solid var(--border); }
+        .main-content { margin-left: 260px; padding: 30px; min-height: 100vh; display: flex; flex-direction: column; }
+        .stat-card { background: var(--card); border-radius: 20px; padding: 25px; border: 1px solid var(--border); margin-bottom: 20px; }
+        .nav-link { color: #888; padding: 12px 20px; border-radius: 12px; margin-bottom: 5px; cursor: pointer; }
+        .nav-link:hover, .nav-link.active { background: rgba(59, 130, 246, 0.15); color: var(--primary); font-weight: 600; }
+        .form-control, .form-select { background: var(--input-bg); border: 1px solid var(--border); color: var(--text); padding: 12px; border-radius: 10px; }
+        .sys-locked { background-color: #EF4444; color: white; animation: pulseRed 2s infinite; }
+        @keyframes pulseRed { 0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); } 70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); } }
+        .admin-only, .mod-allowed { display: none; } /* Hidden by default until role check */
+    </style>
+</head>
+<body>
+
+<div id="qr-hidden" style="display:none"></div>
+
+<div class="sidebar">
+    <div class="brand mb-4 text-primary fw-bold fs-4"><i class="bi bi-shield-lock-fill"></i> ScoutPass</div>
+    <div class="nav flex-column">
+        <div class="nav-link active" onclick="showSection('overview')"><i class="bi bi-grid-1x2-fill me-2"></i> War Room</div>
+        <div class="nav-link text-danger fw-bold" onclick="showSection('alerts')"><i class="bi bi-bell-fill me-2"></i> Alerts <span id="alertBadge" class="badge bg-danger ms-2" style="display:none">0</span></div>
+        <div class="nav-link" onclick="showSection('livelogs')"><i class="bi bi-activity me-2"></i> Live Logs</div>
+        <div class="nav-link" onclick="showSection('registration')"><i class="bi bi-person-plus-fill me-2"></i> Registration</div>
+        <div class="nav-link" onclick="showSection('directory')"><i class="bi bi-search me-2"></i> Directory</div>
+        <div class="nav-link" onclick="showSection('events')"><i class="bi bi-calendar-event-fill me-2"></i> Events</div>
+        <div class="nav-link admin-only" onclick="showSection('staff')"><i class="bi bi-people-fill me-2"></i> Staff Manager</div>
+        <div class="nav-link" onclick="logout()"><i class="bi bi-box-arrow-left me-2"></i> Logout</div>
+    </div>
+</div>
+
+<div class="main-content">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h2 class="fw-bold mb-0" id="pageTitle">WAR ROOM</h2>
+        <div>
+            <i class="bi bi-moon-stars-fill p-2" onclick="toggleTheme()" style="cursor:pointer"></i>
+            <button id="globalLockBtn" class="btn btn-success rounded-pill px-4 admin-only" onclick="toggleScannerLock()">Scanners Active</button>
+        </div>
+    </div>
+
+    <div id="sec-overview" class="section">
+        <div class="row g-4">
+            <div class="col-md-3"><div class="stat-card"><h6>TOTAL REGISTERED</h6><h2 class="fw-bold" id="statTotal">0</h2></div></div>
+            <div class="col-md-3"><div class="stat-card"><h6>TOTAL SCANS</h6><h2 class="fw-bold" id="statScans">0</h2></div></div>
+            <div class="col-md-3"><div class="stat-card border-primary text-primary"><h6>INSIDE CAMP</h6><h2 class="fw-bold" id="statInside">0</h2></div></div>
+        </div>
+        <h5 class="mt-4">Live Event Dashboard</h5>
+        <div id="liveEventCards" class="row g-4 mt-2"></div>
+    </div>
+
+    <div id="sec-alerts" class="section" style="display:none;">
+        <div class="stat-card border-danger border-top border-5">
+            <h5 class="text-danger fw-bold">Critical Alerts <button onclick="clearAlerts()" class="btn btn-sm btn-outline-secondary float-end admin-only">Clear All</button></h5>
+            <table class="table"><tbody id="alertsTableBody"></tbody></table>
+        </div>
+    </div>
+
+    <div id="sec-livelogs" class="section" style="display:none;">
+        <div class="stat-card">
+            <h5>Real-time Activity Feed</h5>
+            <div class="table-responsive" style="max-height: 600px;"><table class="table table-hover"><tbody id="liveLogsBody"></tbody></table></div>
+        </div>
+    </div>
+
+    <div id="sec-registration" class="section" style="display:none;">
+        <div class="stat-card admin-only">
+            <h5>Bulk Registration</h5>
+            <textarea id="bulkText" class="form-control mb-3" rows="5" placeholder="Paste names here..."></textarea>
+            <div class="row g-2 mb-3">
+                <div class="col-md-4"><input type="text" id="regTroopNum" class="form-control" placeholder="Troop No (e.g. 15)"></div>
+                <div class="col-md-8"><input type="text" id="regTroopName" class="form-control" placeholder="Troop Name"></div>
+            </div>
+            <button class="btn btn-primary w-100" onclick="processBulkSafely()">PROCESS & DOWNLOAD IDs</button>
+        </div>
+        <div class="read-only-msg text-center p-5 text-muted" style="display:none">Registration is disabled for Viewers.</div>
+    </div>
+
+    <div id="sec-directory" class="section" style="display:none;">
+        <div class="stat-card">
+            <input type="text" id="searchDir" class="form-control mb-3" placeholder="Search..." onkeyup="filterDirectory()">
+            <table class="table table-hover"><tbody id="dirTable"></tbody></table>
+        </div>
+    </div>
+
+    <div id="sec-events" class="section" style="display:none;">
+        <div class="row">
+            <div class="col-md-4 mod-allowed">
+                <div class="stat-card">
+                    <h5>Add Event</h5>
+                    <input type="text" id="evtName" class="form-control mb-2" placeholder="Event Name">
+                    <select id="evtType" class="form-select mb-2"><option value="ACCESS">Entrance (IN/OUT)</option><option value="ONETIME">One-Time Activity</option></select>
+                    <button onclick="addEvent()" class="btn btn-success w-100">Create</button>
+                </div>
+            </div>
+            <div class="col-md-8"><div class="stat-card" id="eventsList"></div></div>
+        </div>
+    </div>
+
+    <div id="sec-staff" class="section" style="display:none;">
+        <div class="row">
+            <div class="col-md-4 admin-only">
+                <div class="stat-card">
+                    <h5>Add Staff</h5>
+                    <input type="email" id="stfEmail" class="form-control mb-2" placeholder="Email">
+                    <input type="text" id="stfPass" class="form-control mb-2" placeholder="Password">
+                    <select id="stfRole" class="form-select mb-2"><option value="scanner">Scanner</option><option value="viewer">Viewer</option><option value="admin">Admin</option></select>
+                    <button onclick="addStaff()" class="btn btn-dark w-100">Create</button>
+                </div>
+            </div>
+            <div class="col-md-8"><div class="stat-card"><table class="table"><tbody id="staffTable"></tbody></table></div></div>
+        </div>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signOut, createUserWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, onValue, set, push, serverTimestamp, get, remove, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    // 🔴 TODO: PASTE YOUR FIREBASE CONFIG HERE
+    const firebaseConfig = {
+        apiKey: "PASTE_YOUR_API_KEY_HERE",
+        authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
+        projectId: "PASTE_YOUR_PROJECT_ID",
+        storageBucket: "PASTE_YOUR_PROJECT_ID.firebasestorage.app",
+        messagingSenderId: "PASTE_YOUR_SENDER_ID",
+        appId: "PASTE_YOUR_APP_ID",
+        databaseURL: "PASTE_YOUR_DATABASE_URL_HERE"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    // Secondary app for creating other users without logging out
+    const secondaryApp = initializeApp(firebaseConfig, "Secondary");
+    const secondaryAuth = getAuth(secondaryApp);
+
+    let currentUserRole = 'viewer';
+    let allLogs = [], allScouts = [], allEvents = [];
+
+    onAuthStateChanged(auth, async (user) => { 
+        if (!user) window.location.href = "index.html"; 
+        else { 
+            const snap = await get(ref(db, `users/${user.uid}`));
+            if(snap.exists()) {
+                currentUserRole = snap.val().role || 'viewer';
+                if(currentUserRole === 'scanner') { alert('Scanners must use the App'); window.location.href='index.html'; }
+                applyPermissions();
+            }
+        } 
+    });
+
+    function applyPermissions() {
+        document.querySelectorAll('.admin-only').forEach(el => el.style.display = (currentUserRole === 'admin') ? 'block' : 'none');
+        document.querySelectorAll('.mod-allowed').forEach(el => el.style.display = (currentUserRole === 'admin' || currentUserRole === 'moderator') ? 'block' : 'none');
+        document.querySelectorAll('.read-only-msg').forEach(el => el.style.display = (currentUserRole === 'viewer') ? 'block' : 'none');
+    }
+
+    // --- CORE LOGIC ---
+    window.showSection = (id) => { document.querySelectorAll('.section').forEach(d=>d.style.display='none'); document.getElementById('sec-'+id).style.display='block'; document.getElementById('pageTitle').innerText = id.toUpperCase(); };
+    window.logout = () => signOut(auth).then(()=>window.location.href="index.html");
+    window.toggleTheme = () => { document.body.setAttribute('data-theme', document.body.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'); };
+
+    // Realtime Listeners
+    onValue(ref(db, 'scouts'), (s) => { 
+        allScouts = s.exists() ? Object.values(s.val()) : []; 
+        document.getElementById('statTotal').innerText = allScouts.length;
+        let h=''; allScouts.reverse().forEach(sc=>{ h+=`<tr><td>${sc.id}</td><td>${sc.name}</td><td>${sc.troop}</td></tr>`});
+        document.getElementById('dirTable').innerHTML = h;
+    });
+
+    onValue(ref(db, 'logs'), (s) => { 
+        allLogs = s.exists() ? Object.values(s.val()) : [];
+        document.getElementById('statScans').innerText = allLogs.length;
+        let inside=0; allLogs.forEach(l=>{ if(l.action==='IN') inside++; if(l.action==='OUT') inside--; });
+        document.getElementById('statInside').innerText = Math.max(0, inside);
+        
+        let h=''; allLogs.slice().reverse().slice(0,50).forEach(l=>{ h+=`<tr><td>${new Date(l.timestamp).toLocaleTimeString()}</td><td>${l.scoutName}</td><td>${l.eventName}</td><td>${l.action}</td></tr>`});
+        document.getElementById('liveLogsBody').innerHTML = h;
+        renderEventCards();
+    });
+
+    onValue(ref(db, 'events'), (s) => {
+        allEvents = s.exists() ? Object.values(s.val()) : [];
+        document.getElementById('eventsList').innerHTML = allEvents.map(e => `<div class="p-2 border-bottom d-flex justify-content-between"><span>${e.name}</span><span class="badge bg-secondary">${e.type}</span></div>`).join('');
+        renderEventCards();
+    });
+
+    onValue(ref(db, 'alerts'), (s) => {
+        const badge = document.getElementById('alertBadge');
+        if(s.exists()) {
+            badge.style.display = 'inline-block'; badge.innerText = Object.keys(s.val()).length;
+            document.getElementById('alertsTableBody').innerHTML = Object.entries(s.val()).map(([k,v]) => `<tr><td class="text-danger fw-bold">${v.scoutName} Found!</td><td><button class="btn btn-sm btn-dark" onclick="removeAlert('${k}')">Resolve</button></td></tr>`).join('');
+        } else { badge.style.display='none'; document.getElementById('alertsTableBody').innerHTML=''; }
+    });
+
+    window.removeAlert = (k) => remove(ref(db, `alerts/${k}`));
+    window.clearAlerts = () => remove(ref(db, 'alerts'));
+
+    // Actions
+    window.processBulkSafely = async function() {
+        const troopNum = document.getElementById('regTroopNum').value;
+        const troopName = document.getElementById('regTroopName').value;
+        const text = document.getElementById('bulkText').value;
+        if(!troopNum || !text) return Swal.fire('Error', 'Missing Data', 'error');
+        
+        const lines = text.trim().split('\n');
+        const updates = {};
+        const newScouts = [];
+        
+        const snap = await get(ref(db, 'system/scoutCounter'));
+        let counter = snap.exists() ? snap.val() + 1 : 1;
+
+        lines.forEach(name => {
+            if(name.trim()) {
+                const id = `KG${troopNum}/${String(counter).padStart(3,'0')}`;
+                const safeKey = id.replace('/','_');
+                const scout = { id, name: name.trim(), troop: `${troopNum} - ${troopName}`, points: 0 };
+                updates[`scouts/${safeKey}`] = scout;
+                newScouts.push(scout);
+                counter++;
+            }
+        });
+
+        await update(ref(db), updates);
+        await set(ref(db, 'system/scoutCounter'), counter - 1);
+        Swal.fire('Success', `Registered ${newScouts.length} scouts`, 'success');
+        
+        // PDF Gen
+        const { jsPDF } = window.jspdf; const doc = new jsPDF();
+        let y=10; newScouts.forEach(s => { doc.text(`${s.id} - ${s.name}`, 10, y); y+=10; if(y>280){doc.addPage(); y=10;} });
+        doc.save('IDs.pdf');
+    };
+
+    window.addEvent = () => push(ref(db, 'events'), { name: document.getElementById('evtName').value, type: document.getElementById('evtType').value, active: true });
+    window.addStaff = async () => {
+        try {
+            const c = await createUserWithEmailAndPassword(secondaryAuth, document.getElementById('stfEmail').value, document.getElementById('stfPass').value);
+            await set(ref(db, `users/${c.user.uid}`), { email: c.user.email, role: document.getElementById('stfRole').value });
+            Swal.fire('Success', 'Staff Created', 'success');
+        } catch(e) { Swal.fire('Error', e.message, 'error'); }
+    };
+
+    onValue(ref(db, 'users'), (s) => {
+        if(s.exists()) document.getElementById('staffTable').innerHTML = Object.values(s.val()).map(u=>`<tr><td>${u.email}</td><td>${u.role}</td></tr>`).join('');
+    });
+    
+    // System Lock
+    onValue(ref(db, 'system_settings/scanning_active'), (s) => {
+        const btn = document.getElementById('globalLockBtn');
+        if(s.val()) { btn.className='btn btn-success rounded-pill px-4 admin-only'; btn.innerText='Scanners Active'; }
+        else { btn.className='btn sys-locked rounded-pill px-4 admin-only'; btn.innerText='LOCKED'; }
+    });
+    window.toggleScannerLock = async () => { const s = await get(ref(db, 'system_settings/scanning_active')); set(ref(db, 'system_settings/scanning_active'), !s.val()); };
+
+    function renderEventCards() {
+        const div = document.getElementById('liveEventCards');
+        div.innerHTML = allEvents.map(e => {
+            let count = 0;
+            if(e.type === 'ACCESS') {
+                let inside = 0;
+                allLogs.filter(l => l.eventName === e.name).forEach(l => { if(l.action==='IN') inside++; else inside--; });
+                count = Math.max(0, inside);
+            } else {
+                count = allLogs.filter(l => l.eventName === e.name).length;
+            }
+            return `<div class="col-md-4"><div class="stat-card border-top border-4 border-primary text-center"><h5>${e.name}</h5><h1 class="fw-bold display-4">${count}</h1><small>${e.type==='ACCESS'?'INSIDE':'COMPLETED'}</small></div></div>`;
+        }).join('');
+    }
+</script>
+</body>
+</html>
