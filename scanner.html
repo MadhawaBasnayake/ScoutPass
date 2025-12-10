@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ScoutPass Scanner</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css">
+    <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <style>
+        body { font-family: sans-serif; background: #f8f9fa; height: 100vh; overflow: hidden; }
+        #lockedOverlay { position: fixed; inset: 0; background: rgba(255, 59, 48, 0.95); z-index: 5000; display: none; align-items: center; justify-content: center; color: white; flex-direction: column; }
+        #loginScreen { position: fixed; inset: 0; background: white; z-index: 2000; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 30px; }
+        #mainScreen { display: none; flex-direction: column; padding: 20px; height: 100%; max-width: 500px; margin: auto; }
+        .camera-container { width: 100%; aspect-ratio: 1/1; background: black; border-radius: 20px; overflow: hidden; margin-bottom: 20px; }
+        #reader { width: 100%; height: 100%; object-fit: cover; }
+        .btn-scan { background: #1877F2; color: white; padding: 20px; width: 100%; border-radius: 30px; border: none; font-weight: bold; font-size: 1.2rem; margin-top: 10px; }
+        #resultModal, #missingAlert { position: fixed; inset: 0; background: rgba(0,0,0,0.8); z-index: 3000; display: none; align-items: center; justify-content: center; }
+        .result-card { background: white; width: 90%; padding: 30px; border-radius: 20px; text-align: center; }
+        #missingAlert { background: #FF3B30; color: white; }
+    </style>
+</head>
+<body>
+
+<div id="lockedOverlay"><h1><i class="bi bi-lock-fill"></i></h1><h3>SYSTEM LOCKED</h3></div>
+
+<div id="loginScreen">
+    <h3>ScoutPass Scanner</h3>
+    <input type="email" id="stfEmail" class="form-control mb-2" placeholder="Staff Email">
+    <input type="password" id="stfPass" class="form-control mb-3" placeholder="Password">
+    <button onclick="staffLogin()" class="btn btn-primary w-100">LOGIN</button>
+</div>
+
+<div id="mainScreen">
+    <h5 class="text-center text-primary fw-bold">SCANNER ACTIVE</h5>
+    <div class="camera-container"><div id="reader"></div></div>
+    
+    <select id="eventSelect" class="form-select mb-3" onchange="enableScanning()"><option value="">Select Event...</option></select>
+    <input type="text" id="manualInput" class="form-control mb-2" placeholder="Manual ID">
+    <button onclick="handleManual()" class="btn-scan">SCAN / SUBMIT</button>
+    <div class="text-center mt-3"><a href="#" onclick="signOut(auth)" class="text-danger">Logout</a></div>
+</div>
+
+<div id="resultModal"><div class="result-card">
+    <h2 id="resName">Name</h2><p id="resInfo">ID</p>
+    <div id="dynamicButtons" class="d-grid gap-2"></div>
+    <button onclick="closeModal()" class="btn btn-link mt-2">Cancel</button>
+</div></div>
+
+<div id="missingAlert"><div class="text-center">
+    <h1>⚠️ MISSING!</h1><h2 id="misName">Name</h2>
+    <button onclick="document.getElementById('missingAlert').style.display='none'" class="btn btn-light rounded-pill px-5 mt-4 fw-bold">DISMISS</button>
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+    import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+    import { getDatabase, ref, onValue, push, serverTimestamp, get, update } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-database.js";
+
+    // 🔴 TODO: PASTE YOUR FIREBASE CONFIG HERE
+    const firebaseConfig = {
+        apiKey: "PASTE_YOUR_API_KEY_HERE",
+        authDomain: "PASTE_YOUR_PROJECT_ID.firebaseapp.com",
+        projectId: "PASTE_YOUR_PROJECT_ID",
+        storageBucket: "PASTE_YOUR_PROJECT_ID.firebasestorage.app",
+        messagingSenderId: "PASTE_YOUR_SENDER_ID",
+        appId: "PASTE_YOUR_APP_ID",
+        databaseURL: "PASTE_YOUR_DATABASE_URL_HERE"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getDatabase(app);
+    window.auth = auth; window.signOut = signOut;
+
+    let html5QrCode, selectedEvent, lastScanTime = 0;
+
+    onAuthStateChanged(auth, (user) => {
+        document.getElementById('loginScreen').style.display = user ? 'none' : 'flex';
+        document.getElementById('mainScreen').style.display = user ? 'flex' : 'none';
+        if(user) { loadEvents(); startCamera(); }
+    });
+
+    window.staffLogin = () => signInWithEmailAndPassword(auth, document.getElementById('stfEmail').value, document.getElementById('stfPass').value).catch(e=>Swal.fire('Error',e.message,'error'));
+
+    onValue(ref(db, 'system_settings/scanning_active'), (s) => {
+        const active = s.val();
+        document.getElementById('lockedOverlay').style.display = active ? 'none' : 'flex';
+        if(html5QrCode) active ? html5QrCode.resume() : html5QrCode.pause();
+    });
+
+    function loadEvents() {
+        onValue(ref(db, 'events'), (s) => {
+            const sel = document.getElementById('eventSelect');
+            sel.innerHTML = '<option value="">Select Event...</option>';
+            if(s.exists()) Object.values(s.val()).forEach(v => { if(v.active) sel.innerHTML += `<option value="${v.name}" data-type="${v.type}">${v.name}</option>`; });
+        });
+    }
+
+    window.enableScanning = () => {
+        const sel = document.getElementById('eventSelect');
+        if(sel.value) selectedEvent = { name: sel.value, type: sel.options[sel.selectedIndex].dataset.type };
+    };
+
+    function startCamera() {
+        html5QrCode = new Html5Qrcode("reader");
+        html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, processScan);
+    }
+
+    window.handleManual = () => processScan(document.getElementById('manualInput').value);
+
+    async function processScan(code) {
+        const now = Date.now(); if(now - lastScanTime < 1500) return; lastScanTime = now;
+        if(!selectedEvent) return Swal.fire('Select Event First');
+        
+        const safeKey = code.replace('/','_');
+        const snap = await get(ref(db, `scouts/${safeKey}`));
+        
+        if(snap.exists()) {
+            const s = snap.val();
+            if(s.isMissing) {
+                document.getElementById('misName').innerText = s.name;
+                document.getElementById('missingAlert').style.display = 'flex';
+                if(navigator.vibrate) navigator.vibrate([500,200,500]);
+            } else {
+                showResult(s, code);
+            }
+        } else { Swal.fire('Invalid ID'); }
+        document.getElementById('manualInput').value = '';
+    }
+
+    function showResult(s, rawID) {
+        document.getElementById('resName').innerText = s.name;
+        document.getElementById('resInfo').innerText = s.troop;
+        const div = document.getElementById('dynamicButtons');
+        div.innerHTML = '';
+        
+        if(selectedEvent.type === 'ACCESS') {
+            ['IN', 'OUT'].forEach(act => {
+                div.innerHTML += `<button class="btn btn-${act==='IN'?'success':'warning'}" onclick="logAction('${rawID}', '${s.name}', '${act}')">${act}</button>`;
+            });
+        } else {
+            div.innerHTML += `<button class="btn btn-primary" onclick="logAction('${rawID}', '${s.name}', 'DONE')">MARK DONE</button>`;
+        }
+        document.getElementById('resultModal').style.display = 'flex';
+    }
+
+    window.logAction = async (id, name, act) => {
+        await push(ref(db, 'logs'), { scoutID: id, scoutName: name, eventName: selectedEvent.name, action: act, timestamp: serverTimestamp() });
+        closeModal();
+        const Toast = Swal.mixin({toast: true, position: 'top-end', showConfirmButton: false, timer: 1500});
+        Toast.fire({icon: 'success', title: 'Saved'});
+    };
+
+    window.closeModal = () => document.getElementById('resultModal').style.display = 'none';
+</script>
+</body>
+</html>
